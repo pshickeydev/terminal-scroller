@@ -291,6 +291,22 @@
     white-space: nowrap;
   }
 
+  .setting-group .radio-label {
+    cursor: pointer;
+    opacity: 0.6;
+    transition: opacity 0.2s;
+  }
+
+  .setting-group .radio-label:has(input:checked) {
+    opacity: 1;
+  }
+
+  .setting-group input[type="radio"] {
+    accent-color: var(--accent);
+    margin: 0 2px 0 0;
+    cursor: pointer;
+  }
+
   .setting-group input[type="number"] {
     width: 70px;
     background: var(--input-bg);
@@ -427,6 +443,10 @@
 
 <div class="settings">
   <div class="setting-group">
+    <label class="radio-label"><input type="radio" name="speedMode" value="accelerating" checked> Accelerating</label>
+    <label class="radio-label"><input type="radio" name="speedMode" value="constant"> Constant</label>
+  </div>
+  <div class="setting-group">
     <label for="termCols">Cols</label>
     <input type="number" id="termCols" value="80" min="20" max="300">
   </div>
@@ -524,9 +544,20 @@
 
   themeSelect.addEventListener('change', () => applyTheme(themeSelect.value));
 
+  function getSpeedMode() {
+    return document.querySelector('input[name="speedMode"]:checked').value;
+  }
+
   function computeDelayParams(totalWords) {
     const targetMs = (parseFloat(termDuration.value) || 0) * 1000;
-    if (!targetMs || targetMs <= 0) return { initial: 80, min: 2, readableCount: 0 };
+    const mode = getSpeedMode();
+
+    if (mode === 'constant') {
+      const delay = targetMs > 0 ? (targetMs * 0.95) / totalWords : 80;
+      return { mode: 'constant', delay: Math.max(delay, 0.5), readableCount: 0 };
+    }
+
+    if (!targetMs || targetMs <= 0) return { mode: 'accelerating', initial: 80, min: 2, readableCount: 0 };
 
     const N = totalWords;
     const r = 40;
@@ -536,11 +567,9 @@
     let initial = targetMs * 0.95 / discreteSum;
 
     if (initial >= 60) {
-      return { initial, min: Math.max(initial / r, 0.5), readableCount: 0 };
+      return { mode: 'accelerating', initial, min: Math.max(initial / r, 0.5), readableCount: 0 };
     }
 
-    // Budget is too tight for a readable start across the full curve.
-    // Use two phases: readable prefix at 60ms, then fast decay for the rest.
     const READABLE_MS = 60;
     const readableBudget = Math.min(targetMs * 0.25, 2000);
     const readableCount = Math.max(1, Math.min(Math.floor(readableBudget / READABLE_MS), Math.floor(N * 0.05)));
@@ -552,10 +581,11 @@
     let fastInitial = remainingMs / sum2;
     fastInitial = Math.max(fastInitial, 0.5);
 
-    return { initial: fastInitial, min: Math.max(fastInitial / r, 0.1), readableCount, readableMs: READABLE_MS };
+    return { mode: 'accelerating', initial: fastInitial, min: Math.max(fastInitial / r, 0.1), readableCount, readableMs: READABLE_MS };
   }
 
   function getDelay(wordIdx, total, params) {
+    if (params.mode === 'constant') return params.delay;
     if (wordIdx < params.readableCount) return params.readableMs;
     const progress = (wordIdx - params.readableCount) / (total - params.readableCount);
     return params.initial * Math.pow(params.min / params.initial, progress);

@@ -13,16 +13,25 @@ No dependencies. No build step. Just open `index.html` in a browser.
 
 The output starts at a readable word-by-word pace and progressively accelerates. For very long text, the final words blur past at maximum speed — the contrast emphasizes just how much output there is.
 
+## Speed Modes
+
+A radio toggle selects between two output modes:
+
+- **Accelerating** (default) — starts at a readable pace and exponentially accelerates. Emphasizes output volume by contrasting the readable start with a blurred finish.
+- **Constant** — uniform speed throughout. Every word prints at the same interval.
+
+Both modes respect the Duration setting.
+
 ## Settings
 
 | Setting | Description | Default |
 |---------|-------------|---------|
 | **Cols** | Terminal width in character columns | 80 |
-| **Rows** | Terminal height in text rows | 24 |
+| **Rows** | Terminal height in text rows | 20 |
 | **Duration (s)** | Target animation duration; leave empty for auto-pacing | auto |
 | **Title** | Text shown in the terminal titlebar | ~/output |
 
-When a duration is set, the pacing curve scales to fit. The start always remains readable (~60ms/word) even with short durations and long text — the acceleration curve steepens to compensate.
+When a duration is set, the pacing curve scales to fit. In accelerating mode, the start always remains readable (~60ms/word) even with short durations and long text — the acceleration curve steepens to compensate. In constant mode, the delay is simply target time divided by word count.
 
 ## Themes
 
