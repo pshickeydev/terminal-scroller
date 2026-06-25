@@ -432,7 +432,7 @@
   </div>
   <div class="setting-group">
     <label for="termRows">Rows</label>
-    <input type="number" id="termRows" value="24" min="5" max="80">
+    <input type="number" id="termRows" value="20" min="5" max="80">
   </div>
   <div class="setting-group">
     <label for="termDuration">Duration (s)</label>
@@ -814,18 +814,44 @@
     });
 
     const delayParams = computeDelayParams(total);
-    const maxFrames = 200;
-    const step = Math.max(1, Math.floor(total / maxFrames));
+    const maxFrames = 300;
+    const MIN_FRAME_MS = 20;
 
-    for (let i = 0; i < total; i += step) {
-      renderFrame(canvas, ctx, tokens, i, style);
-      let frameDelay = 0;
-      for (let j = i; j < Math.min(i + step, total); j++) {
-        frameDelay += getDelay(j, total, delayParams);
+    // Build frame list with adaptive sampling: accumulate delay until
+    // it exceeds a threshold, then emit a frame. Early slow words get
+    // one frame per word; fast tail words get batched into fewer frames.
+    const frames = [];
+    let accDelay = 0;
+    for (let i = 0; i < total; i++) {
+      accDelay += getDelay(i, total, delayParams);
+      if (accDelay >= MIN_FRAME_MS || i === total - 1) {
+        frames.push({ wordIdx: i, delay: Math.max(MIN_FRAME_MS, Math.round(accDelay)) });
+        accDelay = 0;
       }
-      gif.addFrame(ctx, { copy: true, delay: Math.max(20, Math.round(frameDelay)) });
-      if (i % 20 === 0) {
-        gifStatus.textContent = `Rendering frames... ${Math.round((i / total) * 100)}%`;
+    }
+
+    // If too many frames, downsample the tail (keep early frames intact)
+    if (frames.length > maxFrames) {
+      const keep = Math.floor(maxFrames * 0.4);
+      const tail = frames.slice(keep);
+      const tailStep = Math.ceil(tail.length / (maxFrames - keep));
+      const sampled = frames.slice(0, keep);
+      for (let i = 0; i < tail.length; i += tailStep) {
+        let mergedDelay = 0;
+        for (let j = i; j < Math.min(i + tailStep, tail.length); j++) {
+          mergedDelay += tail[j].delay;
+        }
+        sampled.push({ wordIdx: tail[Math.min(i + tailStep - 1, tail.length - 1)].wordIdx, delay: mergedDelay });
+      }
+      frames.length = 0;
+      frames.push(...sampled);
+    }
+
+    for (let f = 0; f < frames.length; f++) {
+      renderFrame(canvas, ctx, tokens, frames[f].wordIdx, style);
+      gif.addFrame(ctx, { copy: true, delay: frames[f].delay });
+      if (f % 15 === 0) {
+        gifStatus.textContent = `Rendering frames... ${Math.round((f / frames.length) * 100)}%`;
         await new Promise(r => setTimeout(r, 0));
       }
     }

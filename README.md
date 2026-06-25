@@ -11,6 +11,8 @@ No dependencies. No build step. Just open `index.html` in a browser.
 3. Click **Start** to begin the scrolling animation
 4. Click **Stop** to pause (preserves output) or **Reset** to clear
 
+The output starts at a readable word-by-word pace and progressively accelerates. For very long text, the final words blur past at maximum speed — the contrast emphasizes just how much output there is.
+
 ## Settings
 
 | Setting | Description | Default |
@@ -20,7 +22,7 @@ No dependencies. No build step. Just open `index.html` in a browser.
 | **Duration (s)** | Target animation duration; leave empty for auto-pacing | auto |
 | **Title** | Text shown in the terminal titlebar | ~/output |
 
-When a duration is set, the pacing curve scales to fit — the start stays readable (~60ms/word) and the acceleration steepens to hit the target time. For very long text with short durations, words are batched to overcome browser timing limits.
+When a duration is set, the pacing curve scales to fit. The start always remains readable (~60ms/word) even with short durations and long text — the acceleration curve steepens to compensate.
 
 ## Themes
 
@@ -30,7 +32,7 @@ Claude Code, Green Phosphor, Amber CRT, Matrix, Homebrew, Monokai, Dracula, Sola
 
 ## GIF Export
 
-Click **Export GIF** to render the scrolling animation as an animated GIF. The export uses the current theme, terminal dimensions, and title. Frame timing matches the pacing curve. Requires an internet connection on first use (loads gif.js from CDN).
+Click **Export GIF** to render the scrolling animation as an animated GIF. The export uses the current theme, terminal dimensions, and title. Frame sampling is adaptive — early words get individual frames for word-by-word fidelity, while the fast tail is batched into fewer frames. Requires an internet connection on first use (loads gif.js from CDN).
 
 ## Adding a Theme
 

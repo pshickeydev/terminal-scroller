@@ -12,18 +12,26 @@ Everything lives in one self-contained `index.html` — HTML structure, CSS them
 
 ### Key Sections in index.html
 
-- **CSS themes** (lines 10–176): 20 terminal themes defined as CSS custom property blocks on `data-theme` attributes. The default (Claude Code) uses `:root`.
-- **HTML** (lines 388–461): Container with header, textarea, controls (Start/Stop/Reset/Export GIF), settings row (cols/rows/duration/title), terminal window with titlebar and body, status indicators.
-- **Animation engine** (lines 528–643): `computeDelayParams` computes the pacing curve. Two-phase approach for tight time budgets: readable prefix at 60ms, then exponential decay. `printNext` handles word-by-word output with batching when delays drop below 4ms.
-- **GIF export** (lines 649–869): Loads gif.js from CDN (fetched as text, worker inlined as blob URL to avoid cross-origin issues). Renders frames to an offscreen canvas with scroll support, samples at max 200 frames.
+- **CSS themes**: 20 terminal themes defined as CSS custom property blocks on `data-theme` attributes. The default (Claude Code) uses `:root`. Properties: `--bg`, `--text`, `--accent`, `--term-bg`, `--term-border`, `--titlebar`, `--input-bg`, `--input-border`, `--btn-bg`, `--btn-text`, `--btn-hover`, `--glow`.
+- **HTML**: Container with header, textarea, controls (Start/Stop/Reset/Export GIF), settings row (cols/rows/duration/title), terminal window with titlebar and body, status indicators.
+- **Animation engine**: `computeDelayParams` computes the pacing curve, `getDelay` returns the delay for a given word index, `printNext` handles word-by-word output with batching.
+- **GIF export**: Loads gif.js from CDN (fetched as text, worker inlined as blob URL to avoid cross-origin issues). Renders frames to an offscreen canvas with scroll support. Uses adaptive frame sampling for word-by-word fidelity at the start.
 
 ### Pacing Curve
 
-The delay function is `initial * (min/initial)^progress` where progress goes 0→1. Default auto mode: 80ms initial, 2ms min, ratio 40. When a duration is set and the budget is tight, a readable prefix (first ~5% of words at 60ms) is followed by steeper decay. Word batching kicks in below 4ms to overcome setTimeout floor limitations.
+The delay function is `initial * (min/initial)^progress` where progress goes 0→1. Default auto mode: 80ms initial, 2ms min, ratio 40.
+
+**Two-phase pacing** for tight time budgets (duration set, many words): when the computed initial delay would drop below 60ms, the system switches to a readable prefix (first ~5% of words at 60ms) followed by steeper exponential decay for the remaining words.
+
+**Word batching**: when the computed delay drops below 4ms (the browser's setTimeout floor), multiple words are printed per tick to maintain the intended pace. Batch size = ceil(4ms / delay).
+
+### GIF Frame Sampling
+
+The GIF export uses adaptive frame sampling instead of fixed-step sampling. Delays are accumulated word by word; a frame is emitted when accumulated delay exceeds 20ms. This gives one-frame-per-word fidelity at the readable start and batched frames during the fast tail. If total frames exceed 300, the tail is downsampled while keeping early frames intact.
 
 ### Adding a Theme
 
-Add a `[data-theme="name"]` CSS block with all custom properties, and a corresponding `<option>` in the theme `<select>`. Properties: `--bg`, `--text`, `--accent`, `--term-bg`, `--term-border`, `--titlebar`, `--input-bg`, `--input-border`, `--btn-bg`, `--btn-text`, `--btn-hover`, `--glow`.
+Add a `[data-theme="name"]` CSS block with all custom properties, and a corresponding `<option>` in the theme `<select>`.
 
 ## Testing
 
@@ -34,4 +42,4 @@ python3 -m http.server 8919
 # Then use browser_navigate, browser_snapshot, browser_click, etc.
 ```
 
-Verify: themes render, scroll animation works with auto-scroll, Stop preserves text, Reset clears, GIF exports without console errors, cols/rows/duration/title settings apply correctly.
+Verify: themes render, scroll animation works with auto-scroll, Stop preserves text, Reset clears, GIF exports without console errors, cols/rows/duration/title settings apply correctly. For duration testing, use `browser_evaluate` with a Promise-based timer to measure actual elapsed time vs target.
