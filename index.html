@@ -1,0 +1,874 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Terminal Scroller</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #1a1a1a;
+    --text: #d4d4d4;
+    --accent: #d97757;
+    --term-bg: #111111;
+    --term-border: #333;
+    --titlebar: #1a1a1a;
+    --input-bg: #141414;
+    --input-border: #333;
+    --btn-bg: #d97757;
+    --btn-text: #fff;
+    --btn-hover: #c4684a;
+    --glow: none;
+  }
+
+  [data-theme="phosphor"] {
+    --bg: #0a0a0a; --text: #33ff33; --accent: #33ff33;
+    --term-bg: #050505; --term-border: #1a3a1a; --titlebar: #0a0a0a;
+    --input-bg: #0a0a0a; --input-border: #1a3a1a;
+    --btn-bg: #1a3a1a; --btn-text: #33ff33; --btn-hover: #2a5a2a;
+    --glow: 0 0 5px #33ff3366;
+  }
+
+  [data-theme="amber"] {
+    --bg: #0a0800; --text: #ffb000; --accent: #ffb000;
+    --term-bg: #050400; --term-border: #3a2a00; --titlebar: #0a0800;
+    --input-bg: #0a0800; --input-border: #3a2a00;
+    --btn-bg: #3a2a00; --btn-text: #ffb000; --btn-hover: #5a4a00;
+    --glow: 0 0 5px #ffb00066;
+  }
+
+  [data-theme="monokai"] {
+    --bg: #272822; --text: #f8f8f2; --accent: #a6e22e;
+    --term-bg: #1e1f1c; --term-border: #3e3d32; --titlebar: #272822;
+    --input-bg: #1e1f1c; --input-border: #3e3d32;
+    --btn-bg: #a6e22e; --btn-text: #272822; --btn-hover: #b6f23e;
+    --glow: none;
+  }
+
+  [data-theme="dracula"] {
+    --bg: #282a36; --text: #f8f8f2; --accent: #bd93f9;
+    --term-bg: #21222c; --term-border: #44475a; --titlebar: #282a36;
+    --input-bg: #21222c; --input-border: #44475a;
+    --btn-bg: #bd93f9; --btn-text: #282a36; --btn-hover: #caa4fa;
+    --glow: none;
+  }
+
+  [data-theme="solarized-dark"] {
+    --bg: #002b36; --text: #839496; --accent: #268bd2;
+    --term-bg: #001e26; --term-border: #073642; --titlebar: #002b36;
+    --input-bg: #001e26; --input-border: #073642;
+    --btn-bg: #268bd2; --btn-text: #fdf6e3; --btn-hover: #2aa0e8;
+    --glow: none;
+  }
+
+  [data-theme="solarized-light"] {
+    --bg: #fdf6e3; --text: #657b83; --accent: #268bd2;
+    --term-bg: #eee8d5; --term-border: #d3cbb7; --titlebar: #fdf6e3;
+    --input-bg: #eee8d5; --input-border: #d3cbb7;
+    --btn-bg: #268bd2; --btn-text: #fdf6e3; --btn-hover: #2aa0e8;
+    --glow: none;
+  }
+
+  [data-theme="nord"] {
+    --bg: #2e3440; --text: #d8dee9; --accent: #88c0d0;
+    --term-bg: #242933; --term-border: #3b4252; --titlebar: #2e3440;
+    --input-bg: #242933; --input-border: #3b4252;
+    --btn-bg: #88c0d0; --btn-text: #2e3440; --btn-hover: #8fbcbb;
+    --glow: none;
+  }
+
+  [data-theme="gruvbox"] {
+    --bg: #282828; --text: #ebdbb2; --accent: #fabd2f;
+    --term-bg: #1d2021; --term-border: #3c3836; --titlebar: #282828;
+    --input-bg: #1d2021; --input-border: #3c3836;
+    --btn-bg: #fabd2f; --btn-text: #282828; --btn-hover: #fe8019;
+    --glow: none;
+  }
+
+  [data-theme="one-dark"] {
+    --bg: #282c34; --text: #abb2bf; --accent: #61afef;
+    --term-bg: #21252b; --term-border: #3a3f4b; --titlebar: #282c34;
+    --input-bg: #21252b; --input-border: #3a3f4b;
+    --btn-bg: #61afef; --btn-text: #282c34; --btn-hover: #79bdf5;
+    --glow: none;
+  }
+
+  [data-theme="tokyo-night"] {
+    --bg: #1a1b26; --text: #a9b1d6; --accent: #7aa2f7;
+    --term-bg: #16161e; --term-border: #292e42; --titlebar: #1a1b26;
+    --input-bg: #16161e; --input-border: #292e42;
+    --btn-bg: #7aa2f7; --btn-text: #1a1b26; --btn-hover: #89b4fa;
+    --glow: none;
+  }
+
+  [data-theme="catppuccin"] {
+    --bg: #1e1e2e; --text: #cdd6f4; --accent: #cba6f7;
+    --term-bg: #181825; --term-border: #313244; --titlebar: #1e1e2e;
+    --input-bg: #181825; --input-border: #313244;
+    --btn-bg: #cba6f7; --btn-text: #1e1e2e; --btn-hover: #d4b8fa;
+    --glow: none;
+  }
+
+  [data-theme="rose-pine"] {
+    --bg: #191724; --text: #e0def4; --accent: #c4a7e7;
+    --term-bg: #1f1d2e; --term-border: #26233a; --titlebar: #191724;
+    --input-bg: #1f1d2e; --input-border: #26233a;
+    --btn-bg: #c4a7e7; --btn-text: #191724; --btn-hover: #d4baf7;
+    --glow: none;
+  }
+
+  [data-theme="cobalt2"] {
+    --bg: #193549; --text: #e1efff; --accent: #ffc600;
+    --term-bg: #122738; --term-border: #1f4662; --titlebar: #193549;
+    --input-bg: #122738; --input-border: #1f4662;
+    --btn-bg: #ffc600; --btn-text: #193549; --btn-hover: #ffd340;
+    --glow: none;
+  }
+
+  [data-theme="material"] {
+    --bg: #263238; --text: #eeffff; --accent: #89ddff;
+    --term-bg: #1e272c; --term-border: #37474f; --titlebar: #263238;
+    --input-bg: #1e272c; --input-border: #37474f;
+    --btn-bg: #89ddff; --btn-text: #263238; --btn-hover: #a0e8ff;
+    --glow: none;
+  }
+
+  [data-theme="ubuntu"] {
+    --bg: #300a24; --text: #eeeeec; --accent: #e95420;
+    --term-bg: #2c001e; --term-border: #5e2750; --titlebar: #300a24;
+    --input-bg: #2c001e; --input-border: #5e2750;
+    --btn-bg: #e95420; --btn-text: #fff; --btn-hover: #f26b3a;
+    --glow: none;
+  }
+
+  [data-theme="powershell"] {
+    --bg: #012456; --text: #cccccc; --accent: #2472c8;
+    --term-bg: #001b3e; --term-border: #0d3a6e; --titlebar: #012456;
+    --input-bg: #001b3e; --input-border: #0d3a6e;
+    --btn-bg: #2472c8; --btn-text: #fff; --btn-hover: #3a8ae0;
+    --glow: none;
+  }
+
+  [data-theme="homebrew"] {
+    --bg: #000000; --text: #00ff00; --accent: #00ff00;
+    --term-bg: #000000; --term-border: #003300; --titlebar: #0a0a0a;
+    --input-bg: #0a0a0a; --input-border: #003300;
+    --btn-bg: #003300; --btn-text: #00ff00; --btn-hover: #005500;
+    --glow: 0 0 8px #00ff0044;
+  }
+
+  [data-theme="matrix"] {
+    --bg: #000000; --text: #00ff41; --accent: #00ff41;
+    --term-bg: #000000; --term-border: #003b00; --titlebar: #0a0a0a;
+    --input-bg: #050505; --input-border: #003b00;
+    --btn-bg: #003b00; --btn-text: #00ff41; --btn-hover: #005500;
+    --glow: 0 0 10px #00ff4144, 0 0 20px #00ff4122;
+  }
+
+  [data-theme="minimal"] {
+    --bg: #2d2d2d; --text: #f0f0f0; --accent: #aaa;
+    --term-bg: #1e1e1e; --term-border: #444; --titlebar: #2d2d2d;
+    --input-bg: #252525; --input-border: #444;
+    --btn-bg: #555; --btn-text: #f0f0f0; --btn-hover: #666;
+    --glow: none;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Fira Code', 'Cascadia Code', 'JetBrains Mono', 'Consolas', monospace;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-height: 100vh;
+    padding: 24px;
+    transition: background 0.3s, color 0.3s;
+  }
+
+  .container {
+    width: 100%;
+    max-width: 820px;
+    transition: max-width 0.2s;
+  }
+
+  .header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+  }
+
+  .header h1 {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--accent);
+  }
+
+  .theme-select {
+    background: var(--input-bg);
+    border: 1px solid var(--input-border);
+    color: var(--text);
+    font-family: inherit;
+    font-size: 0.8rem;
+    padding: 6px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    outline: none;
+  }
+
+  .theme-select option { background: var(--bg); color: var(--text); }
+
+  .input-area {
+    margin-bottom: 16px;
+  }
+
+  textarea {
+    width: 100%;
+    height: 120px;
+    background: var(--input-bg);
+    border: 1px solid var(--input-border);
+    color: var(--text);
+    font-family: inherit;
+    font-size: 0.85rem;
+    padding: 12px;
+    border-radius: 8px;
+    resize: vertical;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+
+  textarea:focus { border-color: var(--accent); }
+  textarea:disabled { opacity: 0.5; }
+
+  .controls {
+    display: flex;
+    gap: 10px;
+    margin-top: 10px;
+    flex-wrap: wrap;
+  }
+
+  .controls button {
+    background: var(--btn-bg);
+    color: var(--btn-text);
+    border: none;
+    font-family: inherit;
+    font-size: 0.85rem;
+    padding: 8px 24px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+
+  .controls button:hover { background: var(--btn-hover); }
+  .controls button:disabled { opacity: 0.4; cursor: default; }
+
+  .controls button.secondary {
+    background: transparent;
+    border: 1px solid var(--input-border);
+    color: var(--text);
+  }
+
+  .controls button.secondary:hover { background: var(--input-bg); }
+
+  .settings {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+
+  .setting-group {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .setting-group label {
+    font-size: 0.75rem;
+    opacity: 0.6;
+    white-space: nowrap;
+  }
+
+  .setting-group input[type="number"] {
+    width: 70px;
+    background: var(--input-bg);
+    border: 1px solid var(--input-border);
+    color: var(--text);
+    font-family: inherit;
+    font-size: 0.8rem;
+    padding: 5px 8px;
+    border-radius: 6px;
+    outline: none;
+    text-align: center;
+  }
+
+  .setting-group input[type="number"]:focus { border-color: var(--accent); }
+
+  .setting-group input[type="text"] {
+    width: 180px;
+    background: var(--input-bg);
+    border: 1px solid var(--input-border);
+    color: var(--text);
+    font-family: inherit;
+    font-size: 0.8rem;
+    padding: 5px 8px;
+    border-radius: 6px;
+    outline: none;
+  }
+
+  .setting-group input[type="text"]:focus { border-color: var(--accent); }
+
+  .terminal {
+    border: 1px solid var(--term-border);
+    border-radius: 10px;
+    overflow: hidden;
+    transition: max-width 0.2s;
+  }
+
+  .titlebar {
+    background: var(--titlebar);
+    padding: 10px 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    border-bottom: 1px solid var(--term-border);
+  }
+
+  .dot { width: 12px; height: 12px; border-radius: 50%; }
+  .dot.red { background: #ff5f57; }
+  .dot.yellow { background: #febc2e; }
+  .dot.green { background: #28c840; }
+
+  .titlebar-text {
+    margin-left: 8px;
+    font-size: 0.75rem;
+    opacity: 0.5;
+  }
+
+  .terminal-body {
+    background: var(--term-bg);
+    padding: 16px;
+    overflow-y: auto;
+    font-size: 0.85rem;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    text-shadow: var(--glow);
+  }
+
+  .cursor {
+    display: inline;
+    animation: blink 0.8s step-end infinite;
+  }
+
+  @keyframes blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0; }
+  }
+
+  .speed-indicator {
+    margin-top: 8px;
+    font-size: 0.7rem;
+    opacity: 0.4;
+    text-align: right;
+    height: 1.2em;
+  }
+
+  .gif-status {
+    margin-top: 6px;
+    font-size: 0.75rem;
+    opacity: 0.6;
+    text-align: center;
+    min-height: 1.4em;
+  }
+</style>
+</head>
+<body>
+
+<div class="container" id="container">
+
+<div class="header">
+  <h1>terminal-scroller</h1>
+  <select class="theme-select" id="themeSelect">
+    <option value="claude">Claude Code</option>
+    <option value="phosphor">Green Phosphor</option>
+    <option value="amber">Amber CRT</option>
+    <option value="matrix">Matrix</option>
+    <option value="homebrew">Homebrew</option>
+    <option value="monokai">Monokai</option>
+    <option value="dracula">Dracula</option>
+    <option value="solarized-dark">Solarized Dark</option>
+    <option value="solarized-light">Solarized Light</option>
+    <option value="nord">Nord</option>
+    <option value="gruvbox">Gruvbox</option>
+    <option value="one-dark">One Dark</option>
+    <option value="tokyo-night">Tokyo Night</option>
+    <option value="catppuccin">Catppuccin Mocha</option>
+    <option value="rose-pine">Rose Pine</option>
+    <option value="cobalt2">Cobalt2</option>
+    <option value="material">Material</option>
+    <option value="ubuntu">Ubuntu</option>
+    <option value="powershell">PowerShell</option>
+    <option value="minimal">Minimal</option>
+  </select>
+</div>
+
+<div class="input-area">
+  <textarea id="inputText" placeholder="Paste your text here..."></textarea>
+  <div class="controls">
+    <button id="startBtn">Start</button>
+    <button id="stopBtn" class="secondary" disabled>Stop</button>
+    <button id="resetBtn" class="secondary">Reset</button>
+    <button id="gifBtn" class="secondary">Export GIF</button>
+  </div>
+</div>
+
+<div class="settings">
+  <div class="setting-group">
+    <label for="termCols">Cols</label>
+    <input type="number" id="termCols" value="80" min="20" max="300">
+  </div>
+  <div class="setting-group">
+    <label for="termRows">Rows</label>
+    <input type="number" id="termRows" value="24" min="5" max="80">
+  </div>
+  <div class="setting-group">
+    <label for="termDuration">Duration (s)</label>
+    <input type="number" id="termDuration" value="" min="1" max="600" placeholder="auto">
+  </div>
+  <div class="setting-group">
+    <label for="termTitle">Title</label>
+    <input type="text" id="termTitle" value="~/output" placeholder="Terminal title">
+  </div>
+</div>
+
+<div class="terminal">
+  <div class="titlebar">
+    <span class="dot red"></span>
+    <span class="dot yellow"></span>
+    <span class="dot green"></span>
+    <span class="titlebar-text" id="titlebarText">~/output</span>
+  </div>
+  <div class="terminal-body" id="terminalBody"><span class="cursor" id="cursor">█</span></div>
+</div>
+
+<div class="speed-indicator" id="speedIndicator"></div>
+<div class="gif-status" id="gifStatus"></div>
+
+</div><!-- /container -->
+
+<script>
+  const themeSelect = document.getElementById('themeSelect');
+  const inputText = document.getElementById('inputText');
+  const startBtn = document.getElementById('startBtn');
+  const resetBtn = document.getElementById('resetBtn');
+  const stopBtn = document.getElementById('stopBtn');
+  const gifBtn = document.getElementById('gifBtn');
+  const terminalBody = document.getElementById('terminalBody');
+  const cursor = document.getElementById('cursor');
+  const speedIndicator = document.getElementById('speedIndicator');
+  const gifStatus = document.getElementById('gifStatus');
+  const termCols = document.getElementById('termCols');
+  const termRows = document.getElementById('termRows');
+  const termDuration = document.getElementById('termDuration');
+  const termTitleInput = document.getElementById('termTitle');
+  const titlebarText = document.getElementById('titlebarText');
+
+  let animationId = null;
+  let running = false;
+
+  function measureChar() {
+    const probe = document.createElement('span');
+    probe.style.cssText = 'position:absolute;visibility:hidden;white-space:pre;font:inherit;';
+    probe.textContent = 'M';
+    terminalBody.appendChild(probe);
+    const w = probe.getBoundingClientRect().width;
+    const h = parseFloat(getComputedStyle(terminalBody).lineHeight);
+    probe.remove();
+    return { w, h };
+  }
+
+  const container = document.getElementById('container');
+
+  function applyTerminalSize() {
+    const cols = parseInt(termCols.value) || 80;
+    const rows = parseInt(termRows.value) || 24;
+    const ch = measureChar();
+    const padding = 32;
+    const totalWidth = Math.round(ch.w * cols + padding + 2);
+    terminalBody.style.height = Math.round(ch.h * rows + padding) + 'px';
+    container.style.maxWidth = totalWidth + 'px';
+  }
+
+  termCols.addEventListener('change', applyTerminalSize);
+  termRows.addEventListener('change', applyTerminalSize);
+  termTitleInput.addEventListener('input', () => {
+    titlebarText.textContent = termTitleInput.value;
+  });
+
+  const savedTheme = localStorage.getItem('terminal-scroller-theme') || 'claude';
+  themeSelect.value = savedTheme;
+  applyTheme(savedTheme);
+  requestAnimationFrame(applyTerminalSize);
+
+  function applyTheme(theme) {
+    if (theme === 'claude') {
+      document.body.removeAttribute('data-theme');
+    } else {
+      document.body.setAttribute('data-theme', theme);
+    }
+    localStorage.setItem('terminal-scroller-theme', theme);
+  }
+
+  themeSelect.addEventListener('change', () => applyTheme(themeSelect.value));
+
+  function computeDelayParams(totalWords) {
+    const targetMs = (parseFloat(termDuration.value) || 0) * 1000;
+    if (!targetMs || targetMs <= 0) return { initial: 80, min: 2, readableCount: 0 };
+
+    const N = totalWords;
+    const r = 40;
+    const k = 1 / r;
+    const kn = Math.pow(k, 1 / N);
+    const discreteSum = (1 - k) / (1 - kn);
+    let initial = targetMs * 0.95 / discreteSum;
+
+    if (initial >= 60) {
+      return { initial, min: Math.max(initial / r, 0.5), readableCount: 0 };
+    }
+
+    // Budget is too tight for a readable start across the full curve.
+    // Use two phases: readable prefix at 60ms, then fast decay for the rest.
+    const READABLE_MS = 60;
+    const readableBudget = Math.min(targetMs * 0.25, 2000);
+    const readableCount = Math.max(1, Math.min(Math.floor(readableBudget / READABLE_MS), Math.floor(N * 0.05)));
+    const remainingMs = Math.max(100, targetMs * 0.95 - readableCount * READABLE_MS);
+    const remainingN = N - readableCount;
+
+    const kn2 = Math.pow(k, 1 / remainingN);
+    const sum2 = (1 - k) / (1 - kn2);
+    let fastInitial = remainingMs / sum2;
+    fastInitial = Math.max(fastInitial, 0.5);
+
+    return { initial: fastInitial, min: Math.max(fastInitial / r, 0.1), readableCount, readableMs: READABLE_MS };
+  }
+
+  function getDelay(wordIdx, total, params) {
+    if (wordIdx < params.readableCount) return params.readableMs;
+    const progress = (wordIdx - params.readableCount) / (total - params.readableCount);
+    return params.initial * Math.pow(params.min / params.initial, progress);
+  }
+
+  function tokenize(raw) {
+    const lines = raw.split('\n');
+    const tokens = [];
+    for (let i = 0; i < lines.length; i++) {
+      const words = lines[i].split(/\s+/).filter(w => w.length > 0);
+      for (const w of words) tokens.push(w);
+      if (i < lines.length - 1) tokens.push('\n');
+    }
+    return tokens;
+  }
+
+  function stop() {
+    if (animationId !== null) {
+      clearTimeout(animationId);
+      animationId = null;
+    }
+    running = false;
+    startBtn.disabled = false;
+    stopBtn.disabled = true;
+    inputText.disabled = false;
+    gifBtn.disabled = false;
+    cursor.style.display = 'inline';
+    speedIndicator.textContent = '';
+  }
+
+  function reset() {
+    stop();
+    terminalBody.innerHTML = '';
+    terminalBody.appendChild(cursor);
+    cursor.style.display = 'inline';
+  }
+
+  function appendWord(token, idx, tokens) {
+    const needsSpace = idx > 0 && tokens[idx - 1] !== '\n' && token !== '\n';
+    const textNode = document.createTextNode(token === '\n' ? '\n' : (needsSpace ? ' ' : '') + token);
+    terminalBody.insertBefore(textNode, cursor);
+    terminalBody.scrollTop = terminalBody.scrollHeight;
+  }
+
+  function start() {
+    const raw = inputText.value.trim();
+    if (!raw) return;
+
+    reset();
+    running = true;
+    startBtn.disabled = true;
+    stopBtn.disabled = false;
+    inputText.disabled = true;
+    gifBtn.disabled = true;
+
+    const tokens = tokenize(raw);
+    const total = tokens.length;
+    const delayParams = computeDelayParams(total);
+    let idx = 0;
+
+    const TICK_FLOOR = 4;
+
+    function printNext() {
+      if (idx >= total || !running) {
+        stop();
+        return;
+      }
+
+      const delay = getDelay(idx, total, delayParams);
+      const batchSize = delay < TICK_FLOOR ? Math.ceil(TICK_FLOOR / Math.max(delay, 0.1)) : 1;
+      const end = Math.min(idx + batchSize, total);
+
+      for (; idx < end; idx++) {
+        appendWord(tokens[idx], idx, tokens);
+      }
+
+      const progress = idx / total;
+      speedIndicator.textContent = `${delay < 1 ? delay.toFixed(1) : Math.round(delay)}ms/word · ${Math.round(progress * 100)}%`;
+
+      animationId = setTimeout(printNext, Math.max(delay, TICK_FLOOR));
+    }
+
+    printNext();
+  }
+
+  startBtn.addEventListener('click', start);
+  stopBtn.addEventListener('click', stop);
+  resetBtn.addEventListener('click', reset);
+
+  // --- GIF Export ---
+
+  let workerBlobUrl = null;
+
+  async function loadGifJs() {
+    if (window.GIF && workerBlobUrl) return;
+    const [gifScript, workerScript] = await Promise.all([
+      fetch('https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.js').then(r => r.text()),
+      fetch('https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.worker.js').then(r => r.text()),
+    ]);
+    if (!window.GIF) {
+      const s = document.createElement('script');
+      s.textContent = gifScript;
+      document.head.appendChild(s);
+    }
+    if (!workerBlobUrl) {
+      const blob = new Blob([workerScript], { type: 'application/javascript' });
+      workerBlobUrl = URL.createObjectURL(blob);
+    }
+  }
+
+  function layoutTokens(ctx, tokens, wordIdx, style) {
+    const { width, fontSize, lineHeight, padding, titlebarHeight } = style;
+    const maxWidth = width - padding * 2;
+    const lines = [];
+    let lineX = 0;
+    let lineTokens = [];
+
+    ctx.font = `${fontSize}px ${style.font}`;
+
+    const visibleTokens = tokens.slice(0, wordIdx + 1);
+    for (let i = 0; i < visibleTokens.length; i++) {
+      const tok = visibleTokens[i];
+      if (tok === '\n') {
+        lines.push(lineTokens);
+        lineTokens = [];
+        lineX = 0;
+        continue;
+      }
+      const prefix = (i > 0 && visibleTokens[i - 1] !== '\n') ? ' ' : '';
+      const text = prefix + tok;
+      const measured = ctx.measureText(text).width;
+      if (lineX + measured > maxWidth && lineTokens.length > 0) {
+        lines.push(lineTokens);
+        lineTokens = [];
+        lineX = 0;
+      }
+      lineTokens.push({ text: lineX === 0 ? tok : text, width: lineX === 0 ? ctx.measureText(tok).width : measured });
+      lineX += lineX === 0 ? ctx.measureText(tok).width : measured;
+    }
+    lines.push(lineTokens);
+
+    return lines;
+  }
+
+  function renderFrame(canvas, ctx, tokens, wordIdx, style) {
+    const { width, height, font, fontSize, lineHeight, padding, bg, fg, titlebarHeight } = style;
+
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, width, height);
+
+    // titlebar
+    ctx.fillStyle = style.titlebar;
+    ctx.fillRect(0, 0, width, titlebarHeight);
+    const dotY = titlebarHeight / 2;
+    const dotR = 5;
+    ctx.beginPath(); ctx.arc(14, dotY, dotR, 0, Math.PI * 2); ctx.fillStyle = '#ff5f57'; ctx.fill();
+    ctx.beginPath(); ctx.arc(32, dotY, dotR, 0, Math.PI * 2); ctx.fillStyle = '#febc2e'; ctx.fill();
+    ctx.beginPath(); ctx.arc(50, dotY, dotR, 0, Math.PI * 2); ctx.fillStyle = '#28c840'; ctx.fill();
+    ctx.fillStyle = fg;
+    ctx.globalAlpha = 0.4;
+    ctx.font = `${fontSize * 0.85}px ${font}`;
+    ctx.fillText(style.title, 66, dotY + fontSize * 0.3);
+    ctx.globalAlpha = 1.0;
+
+    // layout text into lines
+    const lines = layoutTokens(ctx, tokens, wordIdx, style);
+    const bodyTop = titlebarHeight + padding;
+    const bodyHeight = height - bodyTop - padding;
+    const totalTextHeight = lines.length * lineHeight;
+    const scrollOffset = Math.max(0, totalTextHeight - bodyHeight);
+
+    // clip to body area
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, bodyTop, width, bodyHeight + padding);
+    ctx.clip();
+
+    ctx.font = `${fontSize}px ${font}`;
+    ctx.fillStyle = fg;
+
+    let cursorX = padding;
+    let cursorY = 0;
+
+    for (let l = 0; l < lines.length; l++) {
+      const drawY = bodyTop + fontSize + l * lineHeight - scrollOffset;
+      if (drawY + lineHeight < bodyTop) continue;
+      if (drawY - fontSize > height) break;
+
+      let x = padding;
+      for (const seg of lines[l]) {
+        ctx.fillText(seg.text, x, drawY);
+        x += seg.width;
+      }
+      cursorX = x;
+      cursorY = drawY;
+    }
+
+    // cursor
+    if (cursorY >= bodyTop && cursorY <= height - padding) {
+      ctx.fillStyle = fg;
+      ctx.fillRect(cursorX + 2, cursorY - fontSize + 2, fontSize * 0.55, fontSize);
+    }
+
+    ctx.restore();
+  }
+
+  function getComputedThemeColors() {
+    const cs = getComputedStyle(document.body);
+    return {
+      bg: cs.getPropertyValue('--term-bg').trim(),
+      fg: cs.getPropertyValue('--text').trim(),
+      titlebar: cs.getPropertyValue('--titlebar').trim(),
+    };
+  }
+
+  async function exportGif() {
+    const raw = inputText.value.trim();
+    if (!raw) { gifStatus.textContent = 'Enter text first.'; return; }
+
+    gifStatus.textContent = 'Loading gif.js...';
+    try { await loadGifJs(); } catch (e) { gifStatus.textContent = e.message; return; }
+
+    gifBtn.disabled = true;
+    startBtn.disabled = true;
+    gifStatus.textContent = 'Rendering frames...';
+
+    const tokens = tokenize(raw);
+    const total = tokens.length;
+    const colors = getComputedThemeColors();
+
+    const cols = parseInt(termCols.value) || 80;
+    const rows = parseInt(termRows.value) || 24;
+    const fontSize = 14;
+    const charWidth = fontSize * 0.6;
+    const lineHeight = fontSize * 1.6;
+    const padding = 16;
+    const titlebarHeight = 36;
+    const width = Math.round(charWidth * cols + padding * 2);
+    const height = Math.round(lineHeight * rows + padding * 2 + titlebarHeight);
+    const font = 'Consolas, monospace';
+    const title = termTitleInput.value || '~/output';
+
+    const style = { width, height, font, fontSize, lineHeight, padding, titlebarHeight, title, ...colors };
+
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+
+    const gif = new GIF({
+      workers: 2,
+      quality: 10,
+      width,
+      height,
+      workerScript: workerBlobUrl,
+    });
+
+    const delayParams = computeDelayParams(total);
+    const maxFrames = 200;
+    const step = Math.max(1, Math.floor(total / maxFrames));
+
+    for (let i = 0; i < total; i += step) {
+      renderFrame(canvas, ctx, tokens, i, style);
+      let frameDelay = 0;
+      for (let j = i; j < Math.min(i + step, total); j++) {
+        frameDelay += getDelay(j, total, delayParams);
+      }
+      gif.addFrame(ctx, { copy: true, delay: Math.max(20, Math.round(frameDelay)) });
+      if (i % 20 === 0) {
+        gifStatus.textContent = `Rendering frames... ${Math.round((i / total) * 100)}%`;
+        await new Promise(r => setTimeout(r, 0));
+      }
+    }
+
+    // final frame with all text, held longer
+    renderFrame(canvas, ctx, tokens, total - 1, style);
+    gif.addFrame(ctx, { copy: true, delay: 2000 });
+
+    gifStatus.textContent = 'Encoding GIF...';
+
+    gif.on('finished', blob => {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'terminal-scroller.gif';
+      a.click();
+      URL.revokeObjectURL(url);
+      gifStatus.textContent = 'GIF saved!';
+      gifBtn.disabled = false;
+      startBtn.disabled = false;
+    });
+
+    gif.on('progress', p => {
+      gifStatus.textContent = `Encoding GIF... ${Math.round(p * 100)}%`;
+    });
+
+    gif.on('abort', () => {
+      gifStatus.textContent = 'GIF encoding aborted.';
+      gifBtn.disabled = false;
+      startBtn.disabled = false;
+    });
+
+    try {
+      gif.render();
+    } catch (e) {
+      gifStatus.textContent = 'GIF encoding failed: ' + e.message;
+      gifBtn.disabled = false;
+      startBtn.disabled = false;
+    }
+  }
+
+  gifBtn.addEventListener('click', exportGif);
+</script>
+
+</body>
+</html>
