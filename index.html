@@ -494,7 +494,7 @@
 
   function applyTerminalSize() {
     const cols = parseInt(termCols.value) || 80;
-    const rows = parseInt(termRows.value) || 24;
+    const rows = parseInt(termRows.value) || 20;
     const ch = measureChar();
     const padding = 32;
     const totalWidth = Math.round(ch.w * cols + padding + 2);
@@ -787,7 +787,7 @@
     const colors = getComputedThemeColors();
 
     const cols = parseInt(termCols.value) || 80;
-    const rows = parseInt(termRows.value) || 24;
+    const rows = parseInt(termRows.value) || 20;
     const fontSize = 14;
     const charWidth = fontSize * 0.6;
     const lineHeight = fontSize * 1.6;
