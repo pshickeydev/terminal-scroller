@@ -7,6 +7,43 @@
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+  .visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+  }
+
+  fieldset {
+    border: none;
+    padding: 0;
+    margin: 0;
+  }
+
+  .skip-link {
+    position: absolute;
+    top: -100px;
+    left: 0;
+    padding: 8px 16px;
+    background: var(--btn-bg);
+    color: var(--btn-text);
+    text-decoration: none;
+    border-radius: 0 0 6px 0;
+    z-index: 100;
+    transition: top 0.2s;
+  }
+
+  .skip-link:focus {
+    top: 0;
+  }
+
+  .input-area:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 4px;
+  }
+
   :root {
     --bg: #1a1a1a;
     --text: #d4d4d4;
@@ -214,7 +251,12 @@
     padding: 6px 10px;
     border-radius: 6px;
     cursor: pointer;
-    outline: none;
+  }
+
+  .theme-select:focus-visible {
+    border-color: var(--accent);
+    outline: 2px solid var(--accent);
+    outline-offset: -1px;
   }
 
   .theme-select option { background: var(--bg); color: var(--text); }
@@ -239,6 +281,11 @@
   }
 
   textarea:focus { border-color: var(--accent); }
+  textarea:focus-visible {
+    border-color: var(--accent);
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
   textarea:disabled { opacity: 0.5; }
 
   .controls {
@@ -262,6 +309,10 @@
 
   .controls button:hover { background: var(--btn-hover); }
   .controls button:disabled { opacity: 0.4; cursor: default; }
+  .controls button:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
 
   .controls button.secondary {
     background: transparent;
@@ -297,6 +348,12 @@
     transition: opacity 0.2s;
   }
 
+  .setting-group .radio-label:has(input:focus-visible) {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
   .setting-group .radio-label:has(input:checked) {
     opacity: 1;
   }
@@ -321,6 +378,11 @@
   }
 
   .setting-group input[type="number"]:focus { border-color: var(--accent); }
+  .setting-group input[type="number"]:focus-visible {
+    border-color: var(--accent);
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
 
   .setting-group input[type="text"] {
     width: 180px;
@@ -335,6 +397,11 @@
   }
 
   .setting-group input[type="text"]:focus { border-color: var(--accent); }
+  .setting-group input[type="text"]:focus-visible {
+    border-color: var(--accent);
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
 
   .terminal {
     border: 1px solid var(--term-border);
@@ -399,14 +466,27 @@
     text-align: center;
     min-height: 1.4em;
   }
+
+  @media (prefers-reduced-motion: reduce) {
+    .cursor { animation: none; }
+    body, .container, .terminal, textarea,
+    .controls button, .setting-group .radio-label,
+    .skip-link {
+      transition: none;
+    }
+  }
 </style>
 </head>
 <body>
 
+<a href="#inputSection" class="skip-link">Skip to input</a>
+<main>
+
 <div class="container" id="container">
 
-<div class="header">
+<header class="header">
   <h1>terminal-scroller</h1>
+  <label for="themeSelect" class="visually-hidden">Theme</label>
   <select class="theme-select" id="themeSelect">
     <option value="claude">Claude Code</option>
     <option value="phosphor">Green Phosphor</option>
@@ -429,9 +509,10 @@
     <option value="powershell">PowerShell</option>
     <option value="minimal">Minimal</option>
   </select>
-</div>
+</header>
 
-<div class="input-area">
+<div class="input-area" id="inputSection" tabindex="-1" aria-label="Input section">
+  <label for="inputText" class="visually-hidden">Terminal output text</label>
   <textarea id="inputText" placeholder="Paste your text here..."></textarea>
   <div class="controls">
     <button id="startBtn">Start</button>
@@ -442,10 +523,11 @@
 </div>
 
 <div class="settings">
-  <div class="setting-group">
+  <fieldset class="setting-group">
+    <legend class="visually-hidden">Speed mode</legend>
     <label class="radio-label"><input type="radio" name="speedMode" value="accelerating" checked> Accelerating</label>
     <label class="radio-label"><input type="radio" name="speedMode" value="constant"> Constant</label>
-  </div>
+  </fieldset>
   <div class="setting-group">
     <label for="termCols">Cols</label>
     <input type="number" id="termCols" value="80" min="20" max="300">
@@ -466,16 +548,16 @@
 
 <div class="terminal">
   <div class="titlebar">
-    <span class="dot red"></span>
-    <span class="dot yellow"></span>
-    <span class="dot green"></span>
+    <span class="dot red" aria-hidden="true"></span>
+    <span class="dot yellow" aria-hidden="true"></span>
+    <span class="dot green" aria-hidden="true"></span>
     <span class="titlebar-text" id="titlebarText">~/output</span>
   </div>
-  <div class="terminal-body" id="terminalBody"><span class="cursor" id="cursor">█</span></div>
+  <div class="terminal-body" id="terminalBody" role="log" aria-live="polite" aria-label="Terminal output"><span class="cursor" id="cursor" aria-hidden="true">█</span></div>
 </div>
 
-<div class="speed-indicator" id="speedIndicator"></div>
-<div class="gif-status" id="gifStatus"></div>
+<div class="speed-indicator" id="speedIndicator" role="status" aria-live="polite"></div>
+<div class="gif-status" id="gifStatus" role="status" aria-live="polite"></div>
 
 </div><!-- /container -->
 
@@ -925,6 +1007,8 @@
 
   gifBtn.addEventListener('click', exportGif);
 </script>
+
+</main>
 
 </body>
 </html>
