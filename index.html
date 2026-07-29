@@ -3,6 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!-- Document the intended policy for anyone self-hosting behind a CSP:
+     script-src 'self' 'unsafe-inline' blob: is required (inline engine plus
+     the gif.js worker blob). -->
 <title>Terminal Scroller</title>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -280,7 +283,6 @@
     transition: border-color 0.2s;
   }
 
-  textarea:focus { border-color: var(--accent); }
   textarea:focus-visible {
     border-color: var(--accent);
     outline: 2px solid var(--accent);
@@ -377,7 +379,6 @@
     text-align: center;
   }
 
-  .setting-group input[type="number"]:focus { border-color: var(--accent); }
   .setting-group input[type="number"]:focus-visible {
     border-color: var(--accent);
     outline: 2px solid var(--accent);
@@ -396,7 +397,6 @@
     outline: none;
   }
 
-  .setting-group input[type="text"]:focus { border-color: var(--accent); }
   .setting-group input[type="text"]:focus-visible {
     border-color: var(--accent);
     outline: 2px solid var(--accent);
@@ -467,6 +467,14 @@
     min-height: 1.4em;
   }
 
+  .noscript {
+    margin-bottom: 16px;
+    padding: 10px 14px;
+    border: 1px solid var(--input-border);
+    border-radius: 8px;
+    font-size: 0.85rem;
+  }
+
   @media (prefers-reduced-motion: reduce) {
     .cursor { animation: none; }
     body, .container, .terminal, textarea,
@@ -483,6 +491,8 @@
 <main>
 
 <div class="container" id="container">
+
+<noscript><p class="noscript">Terminal Scroller needs JavaScript to run. Enable it and reload the page.</p></noscript>
 
 <header class="header">
   <h1>terminal-scroller</h1>
@@ -553,15 +563,30 @@
     <span class="dot green" aria-hidden="true"></span>
     <span class="titlebar-text" id="titlebarText">~/output</span>
   </div>
-  <div class="terminal-body" id="terminalBody" role="log" aria-live="polite" aria-label="Terminal output"><span class="cursor" id="cursor" aria-hidden="true">█</span></div>
+  <div class="terminal-body" id="terminalBody" role="log" aria-label="Terminal output"><span class="cursor" id="cursor" aria-hidden="true">█</span></div>
 </div>
 
-<div class="speed-indicator" id="speedIndicator" role="status" aria-live="polite"></div>
+<div class="speed-indicator" id="speedIndicator" aria-hidden="true"></div>
 <div class="gif-status" id="gifStatus" role="status" aria-live="polite"></div>
 
 </div><!-- /container -->
 
 <script>
+  const CONFIG = {
+    tickFloor: 4,           // setTimeout minimum wait; also the catch-up batch granularity
+    frameMinMs: 20,         // minimum GIF frame duration / sampling threshold
+    maxFrames: 300,         // GIF frame cap for small canvases
+    gifMemoryBudget: 150e6, // approx bytes of RGBA frames to allow (width*height*4*frames)
+    durationFactor: 0.95,   // breathing room under the target duration
+    finalFrameHold: 2000,   // how long the last GIF frame is held
+    autoInitial: 80,        // auto accelerating mode: starting ms/word
+    autoMin: 2,             // auto accelerating mode: minimum ms/word
+    autoConstant: 80,       // auto constant mode: ms/word
+    decayRatio: 40,         // accelerating curve ratio (initial / final)
+    readableMs: 60,         // two-phase pacing: ms/word for the readable prefix
+    fontStack: "'Fira Code', 'Cascadia Code', 'JetBrains Mono', 'Consolas', monospace",
+  };
+
   const themeSelect = document.getElementById('themeSelect');
   const inputText = document.getElementById('inputText');
   const startBtn = document.getElementById('startBtn');
@@ -580,6 +605,8 @@
 
   let animationId = null;
   let running = false;
+  let session = null;
+  const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
 
   function measureChar() {
     const probe = document.createElement('span');
@@ -594,9 +621,19 @@
 
   const container = document.getElementById('container');
 
+  function clampNumber(value, min, max, fallback) {
+    const n = parseFloat(value);
+    if (!Number.isFinite(n)) return fallback;
+    return Math.min(max, Math.max(min, n));
+  }
+
+  function getCols() { return clampNumber(termCols.value, 20, 300, 80); }
+  function getRows() { return clampNumber(termRows.value, 5, 80, 20); }
+  function getDurationS() { return clampNumber(termDuration.value, 1, 600, 0); }
+
   function applyTerminalSize() {
-    const cols = parseInt(termCols.value) || 80;
-    const rows = parseInt(termRows.value) || 20;
+    const cols = getCols();
+    const rows = getRows();
     const ch = measureChar();
     const padding = 32;
     const totalWidth = Math.round(ch.w * cols + padding + 2);
@@ -604,18 +641,54 @@
     container.style.maxWidth = totalWidth + 'px';
   }
 
-  termCols.addEventListener('change', applyTerminalSize);
-  termRows.addEventListener('change', applyTerminalSize);
+  const SETTINGS_KEY = 'terminal-scroller-settings';
+
+  function saveSettings() {
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify({
+      cols: getCols(),
+      rows: getRows(),
+      duration: getDurationS(),
+      title: termTitleInput.value,
+      speedMode: getSpeedMode(),
+    }));
+  }
+
+  function loadSettings() {
+    let s = null;
+    try { s = JSON.parse(localStorage.getItem(SETTINGS_KEY)); } catch { /* ignore */ }
+    if (!s || typeof s !== 'object') return;
+    termCols.value = clampNumber(s.cols, 20, 300, 80);
+    termRows.value = clampNumber(s.rows, 5, 80, 20);
+    termDuration.value = s.duration > 0 ? clampNumber(s.duration, 1, 600, 0) : '';
+    if (typeof s.title === 'string') {
+      termTitleInput.value = s.title;
+      titlebarText.textContent = s.title || '~/output';
+    }
+    if (s.speedMode === 'accelerating' || s.speedMode === 'constant') {
+      document.querySelector(`input[name="speedMode"][value="${s.speedMode}"]`).checked = true;
+    }
+  }
+
+  termCols.addEventListener('change', () => { applyTerminalSize(); saveSettings(); });
+  termRows.addEventListener('change', () => { applyTerminalSize(); saveSettings(); });
+  termDuration.addEventListener('change', saveSettings);
   termTitleInput.addEventListener('input', () => {
     titlebarText.textContent = termTitleInput.value;
+    saveSettings();
+  });
+  document.querySelectorAll('input[name="speedMode"]').forEach(r => {
+    r.addEventListener('change', saveSettings);
   });
 
   const savedTheme = localStorage.getItem('terminal-scroller-theme') || 'claude';
   themeSelect.value = savedTheme;
   applyTheme(savedTheme);
+  loadSettings();
   requestAnimationFrame(applyTerminalSize);
 
   function applyTheme(theme) {
+    const valid = [...themeSelect.options].some(o => o.value === theme);
+    if (!valid) theme = 'claude';
     if (theme === 'claude') {
       document.body.removeAttribute('data-theme');
     } else {
@@ -631,31 +704,31 @@
   }
 
   function computeDelayParams(totalWords) {
-    const targetMs = (parseFloat(termDuration.value) || 0) * 1000;
+    const targetMs = getDurationS() * 1000;
     const mode = getSpeedMode();
 
     if (mode === 'constant') {
-      const delay = targetMs > 0 ? (targetMs * 0.95) / totalWords : 80;
+      const delay = targetMs > 0 ? (targetMs * CONFIG.durationFactor) / totalWords : CONFIG.autoConstant;
       return { mode: 'constant', delay: Math.max(delay, 0.5), readableCount: 0 };
     }
 
-    if (!targetMs || targetMs <= 0) return { mode: 'accelerating', initial: 80, min: 2, readableCount: 0 };
+    if (!targetMs || targetMs <= 0) return { mode: 'accelerating', initial: CONFIG.autoInitial, min: CONFIG.autoMin, readableCount: 0 };
 
     const N = totalWords;
-    const r = 40;
+    const r = CONFIG.decayRatio;
     const k = 1 / r;
     const kn = Math.pow(k, 1 / N);
     const discreteSum = (1 - k) / (1 - kn);
-    let initial = targetMs * 0.95 / discreteSum;
+    let initial = targetMs * CONFIG.durationFactor / discreteSum;
 
-    if (initial >= 60) {
+    if (initial >= CONFIG.readableMs) {
       return { mode: 'accelerating', initial, min: Math.max(initial / r, 0.5), readableCount: 0 };
     }
 
-    const READABLE_MS = 60;
+    const READABLE_MS = CONFIG.readableMs;
     const readableBudget = Math.min(targetMs * 0.25, 2000);
     const readableCount = Math.max(1, Math.min(Math.floor(readableBudget / READABLE_MS), Math.floor(N * 0.05)));
-    const remainingMs = Math.max(100, targetMs * 0.95 - readableCount * READABLE_MS);
+    const remainingMs = Math.max(100, targetMs * CONFIG.durationFactor - readableCount * READABLE_MS);
     const remainingN = N - readableCount;
 
     const kn2 = Math.pow(k, 1 / remainingN);
@@ -669,16 +742,19 @@
   function getDelay(wordIdx, total, params) {
     if (params.mode === 'constant') return params.delay;
     if (wordIdx < params.readableCount) return params.readableMs;
-    const progress = (wordIdx - params.readableCount) / (total - params.readableCount);
+    const span = total - params.readableCount;
+    const progress = span > 0 ? (wordIdx - params.readableCount) / span : 0;
     return params.initial * Math.pow(params.min / params.initial, progress);
   }
 
   function tokenize(raw) {
+    // Words keep their trailing whitespace, so indentation, tabs, and column
+    // alignment survive. Newlines are separate tokens.
     const lines = raw.split('\n');
     const tokens = [];
     for (let i = 0; i < lines.length; i++) {
-      const words = lines[i].split(/\s+/).filter(w => w.length > 0);
-      for (const w of words) tokens.push(w);
+      const matches = lines[i].match(/[\t ]*\S+[\t ]*/g) || [];
+      for (const m of matches) tokens.push(m);
       if (i < lines.length - 1) tokens.push('\n');
     }
     return tokens;
@@ -691,66 +767,139 @@
     }
     running = false;
     startBtn.disabled = false;
+    startBtn.textContent = session && session.idx < session.total ? 'Resume' : 'Start';
     stopBtn.disabled = true;
     inputText.disabled = false;
     gifBtn.disabled = false;
     cursor.style.display = 'inline';
-    speedIndicator.textContent = '';
+    // Turn live announcements back on so the final text stays accessible.
+    terminalBody.setAttribute('aria-live', 'polite');
+  }
+
+  function finish() {
+    stop();
+    startBtn.textContent = 'Start';
+    session = null;
+    speedIndicator.removeAttribute('aria-hidden');
+    speedIndicator.textContent = 'Finished printing output.';
+  }
+
+  function announceProgress(percent) {
+    // The indicator is aria-hidden from assistive tech; temporarily expose
+    // it so this milestone is announced, then hide it again.
+    speedIndicator.removeAttribute('aria-hidden');
+    speedIndicator.textContent = percent > 0
+      ? `Printing: ${percent}% complete.`
+      : 'Started printing output.';
+    // Force a re-announcement even when the text didn't change.
+    if (percent > 0) speedIndicator.textContent += '\u00a0';
+    requestAnimationFrame(() => speedIndicator.setAttribute('aria-hidden', 'true'));
   }
 
   function reset() {
     stop();
+    startBtn.textContent = 'Start';
+    session = null;
     terminalBody.innerHTML = '';
     terminalBody.appendChild(cursor);
     cursor.style.display = 'inline';
   }
 
-  function appendWord(token, idx, tokens) {
-    const needsSpace = idx > 0 && tokens[idx - 1] !== '\n' && token !== '\n';
-    const textNode = document.createTextNode(token === '\n' ? '\n' : (needsSpace ? ' ' : '') + token);
-    terminalBody.insertBefore(textNode, cursor);
-    terminalBody.scrollTop = terminalBody.scrollHeight;
+  function wordNode(tokens, idx) {
+    const token = tokens[idx];
+    const needsSpace = idx > 0 && tokens[idx - 1] !== '\n' && token !== '\n' && !/[\t ]$/.test(tokens[idx - 1]);
+    return document.createTextNode(token === '\n' ? '\n' : (needsSpace ? ' ' : '') + token);
+  }
+
+  function settingsSignature() {
+    return [getSpeedMode(), getDurationS()].join('|');
   }
 
   function start() {
     const raw = inputText.value.trim();
     if (!raw) return;
 
-    reset();
+    // Resume the paused session when neither the text nor the pacing
+    // settings changed, otherwise start fresh.
+    if (session && session.raw === raw && session.settings === settingsSignature() && session.idx < session.total) {
+      session.runningFrom = performance.now() - session.elapsed;
+    } else {
+      reset();
+      session = {
+        raw,
+        settings: settingsSignature(),
+        tokens: tokenize(raw),
+        idx: 0,
+        scheduled: 0,
+        runningFrom: null,
+        elapsed: 0,
+        nextAnnounce: 0,
+        delayParams: null,
+      };
+      session.total = session.tokens.length;
+      session.delayParams = computeDelayParams(session.total);
+    }
+
     running = true;
     startBtn.disabled = true;
+    startBtn.textContent = 'Start';
     stopBtn.disabled = false;
     inputText.disabled = true;
     gifBtn.disabled = true;
 
-    const tokens = tokenize(raw);
-    const total = tokens.length;
-    const delayParams = computeDelayParams(total);
-    let idx = 0;
+    // Streaming thousands of DOM changes into a live region would flood
+    // screen readers, so announcements pause while printing.
+    terminalBody.setAttribute('aria-live', 'off');
 
-    const TICK_FLOOR = 4;
+    // For users who prefer reduced motion, dump the output instantly.
+    if (reducedMotion.matches) {
+      const frag = document.createDocumentFragment();
+      while (session.idx < session.total) {
+        frag.appendChild(wordNode(session.tokens, session.idx));
+        session.idx++;
+      }
+      terminalBody.insertBefore(frag, cursor);
+      terminalBody.scrollTop = terminalBody.scrollHeight;
+      finish();
+      return;
+    }
 
-    function printNext() {
-      if (idx >= total || !running) {
-        stop();
+    function printNext(now) {
+      if (session.idx >= session.total || !running) {
+        finish();
         return;
       }
 
-      const delay = getDelay(idx, total, delayParams);
-      const batchSize = delay < TICK_FLOOR ? Math.ceil(TICK_FLOOR / Math.max(delay, 0.1)) : 1;
-      const end = Math.min(idx + batchSize, total);
+      if (session.runningFrom === null) session.runningFrom = now;
+      const elapsed = now - session.runningFrom;
+      session.elapsed = elapsed;
 
-      for (; idx < end; idx++) {
-        appendWord(tokens[idx], idx, tokens);
+      // Catch up to the schedule in one batch, inserting all due words in a
+      // single fragment and scrolling once. Timestamp-based pacing keeps the
+      // Duration target accurate even when timers are throttled or delayed.
+      const frag = document.createDocumentFragment();
+      let batchCount = 0;
+      while (session.idx < session.total && session.scheduled <= elapsed) {
+        frag.appendChild(wordNode(session.tokens, session.idx));
+        session.scheduled += getDelay(session.idx, session.total, session.delayParams);
+        session.idx++;
+        batchCount++;
+      }
+      if (batchCount > 0) {
+        terminalBody.insertBefore(frag, cursor);
+        terminalBody.scrollTop = terminalBody.scrollHeight;
       }
 
-      const progress = idx / total;
-      speedIndicator.textContent = `${delay < 1 ? delay.toFixed(1) : Math.round(delay)}ms/word · ${Math.round(progress * 100)}%`;
+      const progress = session.idx / session.total;
+      if (progress >= session.nextAnnounce) {
+        announceProgress(Math.round(progress * 10) * 10);
+        session.nextAnnounce = progress + 0.1;
+      }
 
-      animationId = setTimeout(printNext, Math.max(delay, TICK_FLOOR));
+      animationId = setTimeout(() => printNext(performance.now()), Math.max(session.scheduled - elapsed, CONFIG.tickFloor));
     }
 
-    printNext();
+    printNext(performance.now());
   }
 
   startBtn.addEventListener('click', start);
@@ -761,12 +910,32 @@
 
   let workerBlobUrl = null;
 
+  const GIF_JS_URL = 'https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.js';
+  const GIF_WORKER_URL = 'https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.worker.js';
+  // SRI digests for the pinned gif.js@0.2.0 release. Reject anything that
+  // doesn't match so a compromised or rewritten CDN response can't run.
+  const GIF_JS_INTEGRITY = 'sha384-4RMW82CWFobXY+HRHXe5go/V5acBhiIVGCT+2k7TEoxi7AiWKw8WoWb9qMU+FAFu';
+  const GIF_WORKER_INTEGRITY = 'sha384-uL0SwIQSos1DfQU2KzlDbPuSz7Jwo+hmNPIhe86VJ+MWwyj0DvjngnAgWrkNi9eQ';
+
+  async function sha384b64(text) {
+    // Encode as UTF-8 bytes first: a tampered script containing non-Latin-1
+    // characters would otherwise crash String.fromCharCode.
+    const bytes = new TextEncoder().encode(text);
+    const digest = await crypto.subtle.digest('SHA-384', bytes);
+    return 'sha384-' + btoa(String.fromCharCode(...new Uint8Array(digest)));
+  }
+
   async function loadGifJs() {
     if (window.GIF && workerBlobUrl) return;
-    const [gifScript, workerScript] = await Promise.all([
-      fetch('https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.js').then(r => r.text()),
-      fetch('https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.worker.js').then(r => r.text()),
-    ]);
+    const [gifRes, workerRes] = await Promise.all([fetch(GIF_JS_URL), fetch(GIF_WORKER_URL)]);
+    if (!gifRes.ok || !workerRes.ok) {
+      throw new Error(`Failed to load gif.js (HTTP ${gifRes.status}/${workerRes.status})`);
+    }
+    const [gifScript, workerScript] = await Promise.all([gifRes.text(), workerRes.text()]);
+    const [gifHash, workerHash] = await Promise.all([sha384b64(gifScript), sha384b64(workerScript)]);
+    if (gifHash !== GIF_JS_INTEGRITY || workerHash !== GIF_WORKER_INTEGRITY) {
+      throw new Error('gif.js failed integrity check; not executing CDN code');
+    }
     if (!window.GIF) {
       const s = document.createElement('script');
       s.textContent = gifScript;
@@ -778,41 +947,58 @@
     }
   }
 
-  function layoutTokens(ctx, tokens, wordIdx, style) {
-    const { width, fontSize, lineHeight, padding, titlebarHeight } = style;
+  function createLayoutState(ctx, tokens, style) {
+    // Incremental word-wrap layout: state advances token by token, so
+    // rendering N frames costs O(total tokens) instead of O(frames x tokens).
+    const { width, fontSize, padding, rows } = style;
     const maxWidth = width - padding * 2;
-    const lines = [];
+    const lines = [[]];
     let lineX = 0;
-    let lineTokens = [];
+    let upto = 0;
+    // Lines far above the scrollback viewport can never be painted again,
+    // so drop them to bound memory on very long exports.
+    const maxRetained = rows + 2;
+    let trimmed = 0;
 
-    ctx.font = `${fontSize}px ${style.font}`;
-
-    const visibleTokens = tokens.slice(0, wordIdx + 1);
-    for (let i = 0; i < visibleTokens.length; i++) {
-      const tok = visibleTokens[i];
-      if (tok === '\n') {
-        lines.push(lineTokens);
-        lineTokens = [];
-        lineX = 0;
-        continue;
+    function advance(uptoIdx) {
+      ctx.font = `${fontSize}px ${style.font}`;
+      for (; upto <= uptoIdx && upto < tokens.length; upto++) {
+        const tok = tokens[upto];
+        if (tok === '\n') {
+          lines.push([]);
+          lineX = 0;
+          if (lines.length > maxRetained) {
+            const drop = lines.length - maxRetained;
+            lines.splice(0, drop);
+            trimmed += drop;
+          }
+          continue;
+        }
+        const prefix = (upto > 0 && tokens[upto - 1] !== '\n' && !/[\t ]$/.test(tokens[upto - 1])) ? ' ' : '';
+        const text = prefix + tok;
+        const measured = ctx.measureText(text).width;
+        const current = lines[lines.length - 1];
+        if (lineX + measured > maxWidth && current.length > 0) {
+          lines.push([]);
+          lineX = 0;
+        }
+        const drawText = lineX === 0 ? tok : text;
+        const drawWidth = lineX === 0 ? ctx.measureText(drawText).width : measured;
+        lines[lines.length - 1].push({ text: drawText, width: drawWidth });
+        lineX += drawWidth;
       }
-      const prefix = (i > 0 && visibleTokens[i - 1] !== '\n') ? ' ' : '';
-      const text = prefix + tok;
-      const measured = ctx.measureText(text).width;
-      if (lineX + measured > maxWidth && lineTokens.length > 0) {
-        lines.push(lineTokens);
-        lineTokens = [];
-        lineX = 0;
-      }
-      lineTokens.push({ text: lineX === 0 ? tok : text, width: lineX === 0 ? ctx.measureText(tok).width : measured });
-      lineX += lineX === 0 ? ctx.measureText(tok).width : measured;
     }
-    lines.push(lineTokens);
 
-    return lines;
+    function endOf(line) {
+      let w = 0;
+      for (const seg of line) w += seg.width;
+      return w;
+    }
+
+    return { advance, lines, endOf, get trimmed() { return trimmed; } };
   }
 
-  function renderFrame(canvas, ctx, tokens, wordIdx, style) {
+  function renderFrame(canvas, ctx, layoutState, wordIdx, style) {
     const { width, height, font, fontSize, lineHeight, padding, bg, fg, titlebarHeight } = style;
 
     ctx.fillStyle = bg;
@@ -832,12 +1018,13 @@
     ctx.fillText(style.title, 66, dotY + fontSize * 0.3);
     ctx.globalAlpha = 1.0;
 
-    // layout text into lines
-    const lines = layoutTokens(ctx, tokens, wordIdx, style);
+    layoutState.advance(wordIdx);
+    const lines = layoutState.lines;
     const bodyTop = titlebarHeight + padding;
     const bodyHeight = height - bodyTop - padding;
-    const totalTextHeight = lines.length * lineHeight;
+    const totalTextHeight = (lines.length + layoutState.trimmed) * lineHeight;
     const scrollOffset = Math.max(0, totalTextHeight - bodyHeight);
+    const yOffset = scrollOffset - layoutState.trimmed * lineHeight;
 
     // clip to body area
     ctx.save();
@@ -848,24 +1035,20 @@
     ctx.font = `${fontSize}px ${font}`;
     ctx.fillStyle = fg;
 
-    let cursorX = padding;
-    let cursorY = 0;
-
-    for (let l = 0; l < lines.length; l++) {
-      const drawY = bodyTop + fontSize + l * lineHeight - scrollOffset;
-      if (drawY + lineHeight < bodyTop) continue;
-      if (drawY - fontSize > height) break;
-
+    const lastLine = lines.length - 1;
+    const lastVisible = Math.min(Math.ceil((bodyTop + yOffset + bodyHeight - fontSize) / lineHeight), lastLine);
+    for (let l = Math.max(0, lastVisible - Math.ceil(bodyHeight / lineHeight) - 1); l <= lastVisible; l++) {
+      const drawY = bodyTop + fontSize + l * lineHeight - yOffset;
       let x = padding;
       for (const seg of lines[l]) {
         ctx.fillText(seg.text, x, drawY);
         x += seg.width;
       }
-      cursorX = x;
-      cursorY = drawY;
     }
 
-    // cursor
+    // cursor at the end of the last laid-out line
+    const cursorX = padding + layoutState.endOf(lines[lastLine]);
+    const cursorY = bodyTop + fontSize + lastLine * lineHeight - yOffset;
     if (cursorY >= bodyTop && cursorY <= height - padding) {
       ctx.fillStyle = fg;
       ctx.fillRect(cursorX + 2, cursorY - fontSize + 2, fontSize * 0.55, fontSize);
@@ -898,24 +1081,32 @@
     const total = tokens.length;
     const colors = getComputedThemeColors();
 
-    const cols = parseInt(termCols.value) || 80;
-    const rows = parseInt(termRows.value) || 20;
+    const cols = getCols();
+    const rows = getRows();
     const fontSize = 14;
-    const charWidth = fontSize * 0.6;
     const lineHeight = fontSize * 1.6;
     const padding = 16;
     const titlebarHeight = 36;
-    const width = Math.round(charWidth * cols + padding * 2);
-    const height = Math.round(lineHeight * rows + padding * 2 + titlebarHeight);
-    const font = 'Consolas, monospace';
+    const font = CONFIG.fontStack;
     const title = termTitleInput.value || '~/output';
 
-    const style = { width, height, font, fontSize, lineHeight, padding, titlebarHeight, title, ...colors };
-
     const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    // Measure the actual monospace advance width so wrapping matches the
+    // on-screen terminal instead of assuming a 0.6 ratio.
+    ctx.font = `${fontSize}px ${font}`;
+    const charWidth = ctx.measureText('M'.repeat(10)).width / 10;
+    const width = Math.round(charWidth * cols + padding * 2);
+    const height = Math.round(lineHeight * rows + padding * 2 + titlebarHeight);
     canvas.width = width;
     canvas.height = height;
-    const ctx = canvas.getContext('2d');
+
+    const style = { width, height, font, fontSize, lineHeight, padding, titlebarHeight, title, rows, ...colors };
+
+    // Every queued frame is held in memory as a full RGBA bitmap until the
+    // workers finish, so cap the frame count for large canvases.
+    const maxFrames = Math.max(30, Math.min(CONFIG.maxFrames, Math.floor(CONFIG.gifMemoryBudget / (width * height * 4))));
+    const MIN_FRAME_MS = CONFIG.frameMinMs;
 
     const gif = new GIF({
       workers: 2,
@@ -925,9 +1116,16 @@
       workerScript: workerBlobUrl,
     });
 
+    function endExport() {
+      gifBtn.disabled = false;
+      startBtn.disabled = false;
+      // Release the worker pool and per-frame RGBA buffers held by gif.js.
+      [...gif.freeWorkers, ...gif.activeWorkers].forEach(w => w.terminate());
+      gif.frames.length = 0;
+      gif.imageParts = null;
+    }
+
     const delayParams = computeDelayParams(total);
-    const maxFrames = 300;
-    const MIN_FRAME_MS = 20;
 
     // Build frame list with adaptive sampling: accumulate delay until
     // it exceeds a threshold, then emit a frame. Early slow words get
@@ -959,8 +1157,9 @@
       frames.push(...sampled);
     }
 
+    const layoutState = createLayoutState(ctx, tokens, style);
     for (let f = 0; f < frames.length; f++) {
-      renderFrame(canvas, ctx, tokens, frames[f].wordIdx, style);
+      renderFrame(canvas, ctx, layoutState, frames[f].wordIdx, style);
       gif.addFrame(ctx, { copy: true, delay: frames[f].delay });
       if (f % 15 === 0) {
         gifStatus.textContent = `Rendering frames... ${Math.round((f / frames.length) * 100)}%`;
@@ -969,8 +1168,8 @@
     }
 
     // final frame with all text, held longer
-    renderFrame(canvas, ctx, tokens, total - 1, style);
-    gif.addFrame(ctx, { copy: true, delay: 2000 });
+    renderFrame(canvas, ctx, layoutState, total - 1, style);
+    gif.addFrame(ctx, { copy: true, delay: CONFIG.finalFrameHold });
 
     gifStatus.textContent = 'Encoding GIF...';
 
@@ -980,10 +1179,9 @@
       a.href = url;
       a.download = 'terminal-scroller.gif';
       a.click();
-      URL.revokeObjectURL(url);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
       gifStatus.textContent = 'GIF saved!';
-      gifBtn.disabled = false;
-      startBtn.disabled = false;
+      endExport();
     });
 
     gif.on('progress', p => {
@@ -992,16 +1190,14 @@
 
     gif.on('abort', () => {
       gifStatus.textContent = 'GIF encoding aborted.';
-      gifBtn.disabled = false;
-      startBtn.disabled = false;
+      endExport();
     });
 
     try {
       gif.render();
     } catch (e) {
       gifStatus.textContent = 'GIF encoding failed: ' + e.message;
-      gifBtn.disabled = false;
-      startBtn.disabled = false;
+      endExport();
     }
   }
 
